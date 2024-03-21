@@ -15,7 +15,7 @@ typedef struct
 
 static bool isDelimiter(char c)
 {
-	return !(c - ' ');
+	return !(c - ' '); // in caz ca vreau sa adaug si alte caractere pe viitor
 }
 
 static bool endOfFile(char c)
@@ -59,7 +59,7 @@ static void createStates(DFA* dfa)
 	
 	while((state = parseWord(buffer, &buf_index)) != NULL && N > 0)
 	{
-
+		int nr = strToInt(state);
 		N--; // schimba-l numai daca ai gasit o stare distincta
 	}
 
