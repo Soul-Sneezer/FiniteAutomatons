@@ -3,6 +3,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include "common.h"
+#include "list.h"
 
 typedef struct
 {
@@ -15,22 +17,24 @@ typedef struct
 	int nr_stari;
 	int nr_tranzitii;
 
-	int alphabet_size;
-	bool alphabet[26];
+	bool alphabet[27];
 
 	int S;
 	int nr_s_finale;
 	int* S_finale;
 
-	int* functie_tranzitie[26]; // e o lista dinamica
-} DFA;
+	List* functie_tranzitie[27]; // e o lista de liste  dinamice
+} FA;
 
-static void initTFunc(int* func[26])
+static void initTFunc(List* func[27])
 {
 	for(int i = 0; i < 26; i++)
-		func[i] = NULL;
+	{
+		//initList(); 
+	}
 }
 
+// https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
 static unsigned int hash(unsigned int x, unsigned int size) {
     x = ((x >> 16) ^ x) * 0x45d9f3b;
     x = ((x >> 16) ^ x) * 0x45d9f3b;
@@ -38,27 +42,31 @@ static unsigned int hash(unsigned int x, unsigned int size) {
     return x % size;
 }
 
-static DFA* initDFA()
+static FA* initFA()
 {
-	DFA* new_dfa = (DFA*)malloc(sizeof(DFA));
-	new_dfa->nr_stari = 0;
-	new_dfa->nr_tranzitii = 0;
-	new_dfa->S = 0;
-	new_dfa->S_finale = NULL;
+	FA* new_fa = (FA*)malloc(sizeof(FA));
+	new_fa->nr_stari = 0;
+	new_fa->nr_tranzitii = 0;
+	new_fa->S = 0;
+	new_fa->S_finale = NULL;
 
-	initTFunc(new_dfa->functie_tranzitie);
+	initTFunc(new_fa->functie_tranzitie);
 
-	return new_dfa;
+	return new_fa;
 }
 
-static void freeDFA(DFA* dfa)
+static void freeFA(FA* fa)
 {
 	for(int i = 0; i < 26; i++)
 	{
-		if(dfa->alphabet[i])
-			free(dfa->functie_tranzitie[i]);
+		if(fa->alphabet[i])
+		{
+			for(int j = 0; j < fa->nr_stari; j++)
+				freeList(&fa->functie_tranzitie[i][j]);
+		}
 	}
-	dfa = initDFA();
+
+	fa = initFA();
 }
 
 static int strToInt(char* s)
@@ -133,30 +141,31 @@ static void newLine(FILE* fd, int* buf_index, char** buffer, size_t* buf_size)
 	*buf_index = 0;
 }
 
-static void createDFA(FILE* fd, DFA* dfa)
+static void createFA(FILE* fd, FA* fa)
 {
 	size_t buf_size = 256;
 	char* buffer = (char*)malloc(buf_size * sizeof(char));
 	int buf_index = 0;
 	getline(&buffer, &buf_size, fd); // numarul de stari ale automatului N
 	int N = strToInt(parseWord(buffer, &buf_index));
-	dfa->nr_stari = N;
+	fa->nr_stari = N;
 
 	char* state_name = (char*)malloc(buf_size * sizeof(char));
 	newLine(fd, &buf_index, &buffer, &buf_size);
 
 	Entry* state_names = (Entry*)malloc(2 * N * sizeof(Entry));
-	bool alphabet[26];
+	bool alphabet[27];
 	int current = 0;
 	for(int i = 0; i < 2 * N; i++)
 	{
 		state_names[i].value = -1;
 	}
 
-	for(int i = 0; i < 26; i++)
+	for(int i = 0; i < 27; i++)
 	{
 		alphabet[i] = false;
 	}
+
 	while(!endOfFile(buffer[buf_index]) && buffer[buf_index] != '\n')
 	{
 		state_name = parseWord(buffer, &buf_index);
@@ -171,9 +180,10 @@ static void createDFA(FILE* fd, DFA* dfa)
 	}
 	newLine(fd, &buf_index, &buffer, &buf_size);
 	int M = strToInt(parseWord(buffer, &buf_index));
-	dfa->nr_tranzitii = M;
-	int* states[26];
+	fa->nr_tranzitii = M;
+	List* states[27];
 	initTFunc(states);
+
 	while(M > 0)
 	{
 		newLine(fd, &buf_index, &buffer, &buf_size);
@@ -185,91 +195,109 @@ static void createDFA(FILE* fd, DFA* dfa)
 
 		char* l = parseWord(buffer, &buf_index);
 
-		if(alphabet[l[0] - 'a'] == false)	// litera face parte din alfabetul pentru DFA
+		int index;
+		if(l[0] == '#')
+			index = 26;
+		else
+			index = l[0] - 'a';
+
+		if(alphabet[index] == false)	// litera face parte din alfabetul pentru DFA
 		{
-			alphabet[l[0] - 'a'] = true;
-			states[l[0] - 'a'] = (int*)malloc(N * sizeof(int));
+			alphabet[index] = true;
+			fa->functie_tranzitie[index] = (List*)malloc(N * sizeof(List));
+			for(int i = 0; i < N; i++)
+			{
+				initList(&fa->functie_tranzitie[index][x]);
+			}
 		}
-		states[l[0] - 'a'][x] = y; 
+
+		addToList(&fa->functie_tranzitie[index][x], y);
 		M--;
 	}
-
-	for(int i = 0; i < 26; i++)
+	
+	for(int i = 0; i < 27; i++)
 	{
-		dfa->functie_tranzitie[i] = states[i];
 		if(alphabet[i] == true)
-			dfa->alphabet[i] = true;
+			fa->alphabet[i] = true;
 	}
 	
 	newLine(fd, &buf_index, &buffer, &buf_size);
-	dfa->S = findEntry(state_names , 2 * N, strToInt(parseWord(buffer, &buf_index)));
+	fa->S = findEntry(state_names , 2 * N, strToInt(parseWord(buffer, &buf_index)));
 	
 	newLine(fd, &buf_index, &buffer, &buf_size);
 	int NrF = strToInt(parseWord(buffer, &buf_index));
-	dfa->nr_s_finale = NrF;
-	dfa->S_finale = (int*)malloc(NrF * sizeof(int));
+	fa->nr_s_finale = NrF;
+	fa->S_finale = (int*)malloc(NrF * sizeof(int));
 
 	newLine(fd, &buf_index, &buffer, &buf_size);
 	current = 0;
 	while(NrF > 0)
 	{
-		dfa->S_finale[current++] = findEntry(state_names, 2 * N, strToInt(parseWord(buffer, &buf_index)));
+		fa->S_finale[current++] = findEntry(state_names, 2 * N, strToInt(parseWord(buffer, &buf_index)));
 		NrF--;
 	}
-
 	free(state_names);
 }
 
-static void printDFAInfo(DFA* dfa)
+
+static void printFAInfo(FA* fa)
 {
-	printf("Nr stari: %d\n", dfa->nr_stari);
-	printf("Nr tranzitii: %d\n", dfa->nr_tranzitii);
+	printf("Nr stari: %d\n", fa->nr_stari);
+	printf("Nr tranzitii: %d\n", fa->nr_tranzitii);
 	printf("Alfabet: ");
-	for(int i = 0; i < 26; i++)
+	for(int i = 0; i < 27; i++)
 	{
-		if(dfa->alphabet[i])
+		if(i != 26 && fa->alphabet[i])
 			printf("%c ", 'a' + i);
+		else if(i == 26 && fa->alphabet[i])
+			printf("# ");
 	}
 	printf("\nTranzitii: \n");
-	for(int i = 0; i < 26; i++)
+	for(int i = 0; i < 27; i++)
 	{
-		for(int j = 0; j < dfa->nr_stari; j++)
+		for(int j = 0; j < fa->nr_stari; j++)
 		{
-			if(dfa->alphabet[i])
-				printf("%d %c -> %d\n", j, i + 'a', dfa->functie_tranzitie[i][j]);
+			if(i != 26 && fa->alphabet[i])
+			{
+				for(int k = 0; k < fa->functie_tranzitie[i][j].current; k++)
+					printf("%d %c -> %d\n", j, i + 'a', fa->functie_tranzitie[i][j].elements[k]);
+			}
+			else if(i == 26 && fa->alphabet[i])
+			{
+				for(int k = 0; k < fa->functie_tranzitie[i][j].current; k++)
+					printf("%d # -> %d\n", j, fa->functie_tranzitie[26][j].elements[k]);
+			}
 		}
 	}
-
-	printf("Stare initiala: %d\n", dfa->S);
+	printf("Stare initiala: %d\n", fa->S);
 	
 	printf("Stari finale: ");
-	for(int i = 0; i < dfa->nr_s_finale; i++)
+	for(int i = 0; i < fa->nr_s_finale; i++)
 	{
-		printf("%d ", dfa->S_finale[i]);
+		printf("%d ", fa->S_finale[i]);
 	}
 	
 }
 
-static bool verifyWordDFA(DFA* dfa, char* word)
+static bool verifyWord(FA* fa, char* word)
 {
 	int n = strlen(word);
-	int current_state = dfa->S;
+	int current_state = fa->S;
 	for(int i = 0; i < n; i++)
 	{
-		current_state = dfa->functie_tranzitie[word[i] - 'a'][current_state];
-		
+		current_state = fa->functie_tranzitie[word[i] - 'a'][current_state].elements[0];
 	}
 
-	for(int i = 0; i < dfa->nr_s_finale; i++)
+	for(int i = 0; i < fa->nr_s_finale; i++)
 	{
-		if(current_state == dfa->S_finale[i])
+		if(current_state == fa->S_finale[i])
 			return true;
 	}
 
 	return false;
 }
 
-static void testDFA(DFA* dfa, FILE* input_fd, char* output_file)
+static void testFA(FA* fa, FILE* input_fd, char* output_file)
 {
 	FILE* fd = fopen(output_file, "w");
 
@@ -284,7 +312,7 @@ static void testDFA(DFA* dfa, FILE* input_fd, char* output_file)
 	{
 		newLine(input_fd, &buf_index, &buffer, &buf_size);
 		char* cuvant = parseWord(buffer, &buf_index);
-		if(verifyWordDFA(dfa, cuvant))
+		if(verifyWord(fa, cuvant))
 			fprintf(fd, "DA\n");
 		else
 			fprintf(fd, "NU\n");
@@ -295,10 +323,10 @@ static void testDFA(DFA* dfa, FILE* input_fd, char* output_file)
 
 int main()
 {
-	DFA* dfa = initDFA();
-	FILE* fd = readInput("./tests/input(1).txt");
-	createDFA(fd, dfa);
-	printDFAInfo(dfa);
-	testDFA(dfa, fd, "output.txt");
-	freeDFA(dfa);
+	FA* fa = initFA();
+	FILE* fd = readInput("./tests/input.txt");
+	createFA(fd, fa);
+	printFAInfo(fa);
+//	testFA(fa, fd, "output.txt");
+	freeFA(fa);
 }
