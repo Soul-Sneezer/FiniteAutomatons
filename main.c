@@ -223,6 +223,7 @@ static void createDFA(FILE* fd, DFA* dfa)
 static void printDFAInfo(DFA* dfa)
 {
 	printf("Nr stari: %d\n", dfa->nr_stari);
+	printf("Nr tranzitii: %d\n", dfa->nr_tranzitii);
 	printf("Alfabet: ");
 	for(int i = 0; i < 26; i++)
 	{
@@ -249,38 +250,55 @@ static void printDFAInfo(DFA* dfa)
 	
 }
 
-static bool verifyWord(DFA* dfa, char* word)
+static bool verifyWordDFA(DFA* dfa, char* word)
 {
+	int n = strlen(word);
+	int current_state = dfa->S;
+	for(int i = 0; i < n; i++)
+	{
+		current_state = dfa->functie_tranzitie[word[i] - 'a'][current_state];
+		
+	}
 
+	for(int i = 0; i < dfa->nr_s_finale; i++)
+	{
+		if(current_state == dfa->S_finale[i])
+			return true;
+	}
+
+	return false;
 }
 
-static void verifyWords(DFA* dfa, FILE* input_fd, char* output_file)
+static void testDFA(DFA* dfa, FILE* input_fd, char* output_file)
 {
 	FILE* fd = fopen(output_file, "w");
 
-	getline(&buffer, &buf_size, input_fd); // numarul de cuvinte ce urmeaza a fi verificate, NrCuv
-	int NrCuv = strToInt(buffer);	
+	int buf_index = 0;
+	size_t buf_size = 256;
+	char* buffer = (char*)malloc(buf_size * sizeof(char));
+
+	newLine(input_fd, &buf_index, &buffer, &buf_size);
+	int NrCuv = strToInt(parseWord(buffer, &buf_index));
+	printf("%d ", NrCuv);
 	while(NrCuv > 0)
 	{
-		getline(&buffer, &buf_size, input_fd); // cuvant de verificat
+		newLine(input_fd, &buf_index, &buffer, &buf_size);
 		char* cuvant = parseWord(buffer, &buf_index);
-		verifyWord(dfa, cuvant);
+		if(verifyWordDFA(dfa, cuvant))
+			fprintf(fd, "DA\n");
+		else
+			fprintf(fd, "NU\n");
 		free(cuvant);
 		NrCuv--;
 	}
 }
 
-void writeOutput(FILE* fd, char* output)
-{
-	fprintf(fd, "%s\n", output);
-}
-
 int main()
 {
 	DFA* dfa = initDFA();
-	FILE* fd = readInput("./tests/input.txt");
+	FILE* fd = readInput("./tests/input(1).txt");
 	createDFA(fd, dfa);
 	printDFAInfo(dfa);
-	verifyWords(dfa);
+	testDFA(dfa, fd, "output.txt");
 	freeDFA(dfa);
 }
