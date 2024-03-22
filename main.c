@@ -26,14 +26,6 @@ typedef struct
 	List* functie_tranzitie[27]; // e o lista de liste  dinamice
 } FA;
 
-static void initTFunc(List* func[27])
-{
-	for(int i = 0; i < 26; i++)
-	{
-		//initList(); 
-	}
-}
-
 // https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
 static unsigned int hash(unsigned int x, unsigned int size) {
     x = ((x >> 16) ^ x) * 0x45d9f3b;
@@ -49,8 +41,6 @@ static FA* initFA()
 	new_fa->nr_tranzitii = 0;
 	new_fa->S = 0;
 	new_fa->S_finale = NULL;
-
-	initTFunc(new_fa->functie_tranzitie);
 
 	return new_fa;
 }
@@ -182,7 +172,6 @@ static void createFA(FILE* fd, FA* fa)
 	int M = strToInt(parseWord(buffer, &buf_index));
 	fa->nr_tranzitii = M;
 	List* states[27];
-	initTFunc(states);
 
 	while(M > 0)
 	{
@@ -279,22 +268,44 @@ static void printFAInfo(FA* fa)
 	
 }
 
-static bool verifyWord(FA* fa, char* word)
+static void verifyWord(FA* fa, char* word, int n, int index, int start_state, bool* result, int* path)
 {
-	int n = strlen(word);
-	int current_state = fa->S;
-	for(int i = 0; i < n; i++)
+	if(*result == true)
+		return;
+	if(index == n)
 	{
-		current_state = fa->functie_tranzitie[word[i] - 'a'][current_state].elements[0];
-	}
+		for(int i = 0; i < fa->nr_s_finale; i++)
+		{
+			if(start_state == fa->S_finale[i])
+			{
+				printf("\n");
+				for(int i = 0; i < n; i++)
+					printf("%d->",path[i]);
+				printf("%d", start_state);
+				*result = true;
+			}
+		}
 
-	for(int i = 0; i < fa->nr_s_finale; i++)
+		return;
+	}
+	
+	List list = fa->functie_tranzitie[word[index] - 'a'][start_state];
+	
+	for(int i = 0; i < list.current; i++)
 	{
-		if(current_state == fa->S_finale[i])
-			return true;
+		path[index] = start_state;
+		verifyWord(fa, word, n, index + 1, list.elements[i], result, path);
 	}
-
-	return false;
+	if(fa->alphabet[26]) 
+	{
+		List list2 = fa->functie_tranzitie[26][start_state];
+		for(int i = 0; i < list2.current; i++)
+		{
+			if(list2.elements[i] != start_state)
+				verifyWord(fa, word, n, index, list2.elements[i], result, path);
+		}
+	}
+	return;
 }
 
 static void testFA(FA* fa, FILE* input_fd, char* output_file)
@@ -307,12 +318,15 @@ static void testFA(FA* fa, FILE* input_fd, char* output_file)
 
 	newLine(input_fd, &buf_index, &buffer, &buf_size);
 	int NrCuv = strToInt(parseWord(buffer, &buf_index));
-	printf("%d ", NrCuv);
 	while(NrCuv > 0)
 	{
 		newLine(input_fd, &buf_index, &buffer, &buf_size);
 		char* cuvant = parseWord(buffer, &buf_index);
-		if(verifyWord(fa, cuvant))
+		bool result = false;
+		bool loop = false;
+		int* path = (int*)malloc(strlen(cuvant) * sizeof(int));
+		verifyWord(fa, cuvant, strlen(cuvant), 0, fa->S, &result, path);
+		if(result)
 			fprintf(fd, "DA\n");
 		else
 			fprintf(fd, "NU\n");
@@ -324,9 +338,9 @@ static void testFA(FA* fa, FILE* input_fd, char* output_file)
 int main()
 {
 	FA* fa = initFA();
-	FILE* fd = readInput("./tests/input.txt");
+	FILE* fd = readInput("input.txt");
 	createFA(fd, fa);
 	printFAInfo(fa);
-//	testFA(fa, fd, "output.txt");
+	testFA(fa, fd, "output.txt");
 	freeFA(fa);
 }
