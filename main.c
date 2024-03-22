@@ -2,111 +2,285 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include "common.h"
-#include "list.h"
+#include <stdint.h>
+
+typedef struct
+{
+	int key;
+	int value;
+} Entry;
 
 typedef struct
 {
 	int nr_stari;
 	int nr_tranzitii;
-	int S; 
+
+	int alphabet_size;
+	bool alphabet[26];
+
+	int S;
+	int nr_s_finale;
 	int* S_finale;
+
+	int* functie_tranzitie[26]; // e o lista dinamica
 } DFA;
+
+static void initTFunc(int* func[26])
+{
+	for(int i = 0; i < 26; i++)
+		func[i] = NULL;
+}
+
+static unsigned int hash(unsigned int x, unsigned int size) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x % size;
+}
+
+static DFA* initDFA()
+{
+	DFA* new_dfa = (DFA*)malloc(sizeof(DFA));
+	new_dfa->nr_stari = 0;
+	new_dfa->nr_tranzitii = 0;
+	new_dfa->S = 0;
+	new_dfa->S_finale = NULL;
+
+	initTFunc(new_dfa->functie_tranzitie);
+
+	return new_dfa;
+}
+
+static void freeDFA(DFA* dfa)
+{
+	for(int i = 0; i < 26; i++)
+	{
+		if(dfa->alphabet[i])
+			free(dfa->functie_tranzitie[i]);
+	}
+	dfa = initDFA();
+}
+
+static int strToInt(char* s)
+{
+	int nr = 0;
+	for(int i = 0; s[i] != '\0'; i++)
+	{
+		nr = nr * 10 + (int)(s[i] - '0');
+	}
+	return nr;
+}
 
 static bool isDelimiter(char c)
 {
-	return !(c - ' '); // in caz ca vreau sa adaug si alte caractere pe viitor
+	return (c == ' ' || c == '\t' || c == '\r'); // in caz ca vreau sa adaug si alte caractere pe viitor
 }
 
 static bool endOfFile(char c)
 {
-	return c == '\0';
+	return (c == '\0');
 }
 
 static bool endOfLine(char c)
 {
-	return c == '\n';
+	return (c == '\n' || c ==  '\v' || c == '\e');
 }
 
 static char* parseWord(char* buffer, int* current_index)
 {
 	int start_index = *current_index;
-	while(!endOfFile(buffer[*current_index]) && !endOfLine(buffer[*current_index]))
+	while(!endOfFile(buffer[*current_index]) && !isDelimiter(buffer[*current_index]) && !endOfLine(buffer[*current_index]))
 	{
-		if(isDelimiter(buffer[*current_index]))
-		{
-			size_t size = *current_index - start_index;
-			char* new_word = (char*)malloc((size + 1) * sizeof(char));
-			new_word[size] = '\0';
-			strncpy(buffer + start_index, new_word, size);
-			(*current_index)++;
-			return new_word;
-		}
 		(*current_index)++;
 	}
 
-	return NULL;
-}
+	int size = (*current_index) - start_index;
+	char* new_word = (char*)malloc((size + 1) * sizeof(char));
+	new_word[size] = '\0';
 
-static void createStates(DFA* dfa)
-{
-	getline(&buffer, &buf_size, fd); // numarul de stari ale automatului N
-	int N = strToInt(buffer);
-	dfa.nr_stari = N;
-
-	char* state;
-	getline(&buffer, &buf_size, fd); // starile automatului
-	
-	while((state = parseWord(buffer, &buf_index)) != NULL && N > 0)
+	for(int i = 0; i < size; i++)
 	{
-		int nr = strToInt(state);
-		N--; // schimba-l numai daca ai gasit o stare distincta
+		new_word[i] = buffer[start_index + i];
 	}
 
+
+	if(!endOfFile(buffer[*current_index]) && buffer[*current_index] != '\n')
+		(*current_index)++;
+	return new_word;
 }
 
-static void readInput()
+static int findEntry(Entry* entries, int size, int key)
 {
-	FILE* fd = fopen("./tests/input.txt", "r");
+	uint32_t hash_value = hash(key, size);
+	while(entries[hash_value].key != key)
+	{
+		hash_value = (hash_value + 1) % size;
+	}
+
+	return entries[hash_value].value;
+}
+
+static FILE* readInput(char* source)
+{
+	FILE* fd = fopen(source, "r");
+
+	return fd;
+}
+
+static void newLine(FILE* fd, int* buf_index, char** buffer, size_t* buf_size)
+{
+	getline(buffer, buf_size, fd);
+	*buf_index = 0;
+}
+
+static void createDFA(FILE* fd, DFA* dfa)
+{
 	size_t buf_size = 256;
 	char* buffer = (char*)malloc(buf_size * sizeof(char));
-	DFA dfa;
 	int buf_index = 0;
+	getline(&buffer, &buf_size, fd); // numarul de stari ale automatului N
+	int N = strToInt(parseWord(buffer, &buf_index));
+	dfa->nr_stari = N;
 
-	createStates(&dfa);
+	char* state_name = (char*)malloc(buf_size * sizeof(char));
+	newLine(fd, &buf_index, &buffer, &buf_size);
 
-	getline(&buffer, &buf_size, fd); // numarul de tranzitii M
-	int M = strToInt(buffer);
-	dfa.nr_tranzitii = M;
-	while(M > 0)
+	Entry* state_names = (Entry*)malloc(2 * N * sizeof(Entry));
+	bool alphabet[26];
+	int current = 0;
+	for(int i = 0; i < 2 * N; i++)
 	{
-		getline(&buffer, &buf_size, fd); // descriere tranzitie
-M--;
+		state_names[i].value = -1;
 	}
 
-	getline(&buffer, &buf_size, fd); // numar stari finale nrF
-	dfa.S_finale = (int*)malloc(strToInt(buffer) * sizeof(int));
-	getline(&buffer, &buf_size, fd); // starile finale, nrF ca numar
-	while(parseWord(buffer, &buf_index) != NULL);
+	for(int i = 0; i < 26; i++)
+	{
+		alphabet[i] = false;
+	}
+	while(!endOfFile(buffer[buf_index]) && buffer[buf_index] != '\n')
+	{
+		state_name = parseWord(buffer, &buf_index);
+		int nr = strToInt(state_name);
+		uint32_t hash_value = hash(nr, 2 * N);
+		while(state_names[hash_value].value != -1)
+		{
+			hash_value = (hash_value + 1) % (2 * N);;
+		}
+		state_names[hash_value].key = nr;
+		state_names[hash_value].value = current++;
+	}
+	newLine(fd, &buf_index, &buffer, &buf_size);
+	int M = strToInt(parseWord(buffer, &buf_index));
+	dfa->nr_tranzitii = M;
+	int* states[26];
+	initTFunc(states);
+	while(M > 0)
+	{
+		newLine(fd, &buf_index, &buffer, &buf_size);
+		int x = strToInt(parseWord(buffer, &buf_index));
+		x = findEntry(state_names, 2 * N, x);
 
-	getline(&buffer, &buf_size, fd); // numarul de cuvinte ce urmeaza a fi verificate, NrCuv
+		int y = strToInt(parseWord(buffer, &buf_index));
+		y = findEntry(state_names, 2 * N, y);
+
+		char* l = parseWord(buffer, &buf_index);
+
+		if(alphabet[l[0] - 'a'] == false)	// litera face parte din alfabetul pentru DFA
+		{
+			alphabet[l[0] - 'a'] = true;
+			states[l[0] - 'a'] = (int*)malloc(N * sizeof(int));
+		}
+		states[l[0] - 'a'][x] = y; 
+		M--;
+	}
+
+	for(int i = 0; i < 26; i++)
+	{
+		dfa->functie_tranzitie[i] = states[i];
+		if(alphabet[i] == true)
+			dfa->alphabet[i] = true;
+	}
+	
+	newLine(fd, &buf_index, &buffer, &buf_size);
+	dfa->S = findEntry(state_names , 2 * N, strToInt(parseWord(buffer, &buf_index)));
+	
+	newLine(fd, &buf_index, &buffer, &buf_size);
+	int NrF = strToInt(parseWord(buffer, &buf_index));
+	dfa->nr_s_finale = NrF;
+	dfa->S_finale = (int*)malloc(NrF * sizeof(int));
+
+	newLine(fd, &buf_index, &buffer, &buf_size);
+	current = 0;
+	while(NrF > 0)
+	{
+		dfa->S_finale[current++] = findEntry(state_names, 2 * N, strToInt(parseWord(buffer, &buf_index)));
+		NrF--;
+	}
+
+	free(state_names);
+}
+
+static void printDFAInfo(DFA* dfa)
+{
+	printf("Nr stari: %d\n", dfa->nr_stari);
+	printf("Alfabet: ");
+	for(int i = 0; i < 26; i++)
+	{
+		if(dfa->alphabet[i])
+			printf("%c ", 'a' + i);
+	}
+	printf("\nTranzitii: \n");
+	for(int i = 0; i < 26; i++)
+	{
+		for(int j = 0; j < dfa->nr_stari; j++)
+		{
+			if(dfa->alphabet[i])
+				printf("%d %c -> %d\n", j, i + 'a', dfa->functie_tranzitie[i][j]);
+		}
+	}
+
+	printf("Stare initiala: %d\n", dfa->S);
+	
+	printf("Stari finale: ");
+	for(int i = 0; i < dfa->nr_s_finale; i++)
+	{
+		printf("%d ", dfa->S_finale[i]);
+	}
+	
+}
+
+static bool verifyWord(DFA* dfa, char* word)
+{
+
+}
+
+static void verifyWords(DFA* dfa, FILE* input_fd, char* output_file)
+{
+	FILE* fd = fopen(output_file, "w");
+
+	getline(&buffer, &buf_size, input_fd); // numarul de cuvinte ce urmeaza a fi verificate, NrCuv
 	int NrCuv = strToInt(buffer);	
 	while(NrCuv > 0)
 	{
-		getline(&buffer, &buf_size, fd); // cuvant de verificat
+		getline(&buffer, &buf_size, input_fd); // cuvant de verificat
 		char* cuvant = parseWord(buffer, &buf_index);
-		//verifica(cuvant);
+		verifyWord(dfa, cuvant);
 		free(cuvant);
 		NrCuv--;
 	}
 }
 
-void writeOutput(char* output)
+void writeOutput(FILE* fd, char* output)
 {
-	printf("%s\n", output);
+	fprintf(fd, "%s\n", output);
 }
 
 int main()
 {
-	readInput();
+	DFA* dfa = initDFA();
+	FILE* fd = readInput("./tests/input.txt");
+	createDFA(fd, dfa);
+	printDFAInfo(dfa);
+	verifyWords(dfa);
+	freeDFA(dfa);
 }
