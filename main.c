@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "common.h"
 #include "list.h"
+#include "queue.h"
 
 typedef struct
 {
@@ -268,6 +269,137 @@ static void printFAInfo(FA* fa)
 	
 }
 
+static Queue* fromLambda(FA* fa, int n, Queue* q)
+{
+	List* set = (List*)malloc(sizeof(List));	
+	initList(set);
+
+	while(!isEmpty(q))
+	{
+		int start_state = pop(q);
+
+		bool f[n];
+
+		for(int i = 0; i < n; i++)
+		{
+			f[i] = false;
+		}
+
+		Queue* q2 = (Queue*)malloc(sizeof(Queue));
+		initQueue(q2);
+		f[start_state] = true;
+		push(q2, start_state);
+
+		while(!isEmpty(q2))
+		{
+			int current_state = pop(q2);
+			addToList(set, current_state);
+
+			List* list = fa->functie_tranzitie[26];
+			for(int i = 0; i < list->current; i++)
+			{
+				f[list->elements[i]] = true;	
+				push(q2, list->elements[i]);
+			}
+		}
+	}
+
+	Queue* q3 = (Queue*)malloc(sizeof(Queue));
+	initQueue(q3);
+
+	for(int i = 0; i < set->current; i++)
+	{
+		push(q3, set->elements[i]);
+	}
+	free(set);
+	return q3;
+}
+
+static void verifyLFAWord(FA* fa, char* word, int n, int index, int start_state, bool* result)
+{
+	if(*result ==  true)
+		return;
+	if(index == n)
+	{
+		for(int i = 0; i < fa->nr_s_finale; i++)
+		{
+			if(start_state == fa->S_finale[i])
+			{
+				*result = true;
+			}
+		}
+
+		return;
+	}
+
+	Queue* q1 = (Queue*)malloc(sizeof(Queue));
+	Queue* q2 = (Queue*)malloc(sizeof(Queue));
+	Queue* q3 = (Queue*)malloc(sizeof(Queue));
+	initQueue(q1);
+	initQueue(q2);
+	initQueue(q3);
+	push(q1, start_state);
+	int c = word[index] - 'a';
+	if(c < 0 || c > 25)
+		c = 26;
+	List list = fa->functie_tranzitie[c][start_state];
+	
+	for(int i = 0; i < list.current; i++)
+	{
+		q3 = fromLambda(fa, n, q1);
+
+		initQueue(q1);
+
+		List* set = (List*)malloc(sizeof(List));
+		initList(set);
+
+		while(!isEmpty(q3))
+		{
+			start_state = pop(q3);
+			List*	list = fa->functie_tranzitie[c];
+			for(int i = 0; i < list->current; i++)
+			{
+				addToList(set, list->elements[i]);
+			}
+		}
+
+		if(set->capacity != 0)
+		{
+			for(int j = 0; j < set->current; j++)
+			{
+				push(q1, set->elements[j]);
+			}
+			freeList(set);
+			index++;
+		}
+		else
+		{
+			freeQueue(q1);
+			freeQueue(q2);
+			freeQueue(q3);
+			return;
+		}
+	}
+
+	q2 = fromLambda(fa, n, q1);
+
+	for(int i = 0; i < fa->nr_s_finale; i++)
+	{
+		for(int j = 0; j < q2->list->current; j++)
+		{
+			if(fa->S_finale[i] == q2->list->elements[j])
+			{
+				*result = true;
+			}
+		}
+	}
+	
+	freeQueue(q1);
+	freeQueue(q2);
+	freeQueue(q3);
+	return;
+}
+
 static void verifyWord(FA* fa, char* word, int n, int index, int start_state, bool* result, int* path)
 {
 	if(*result == true)
@@ -325,12 +457,18 @@ static void testFA(FA* fa, FILE* input_fd, char* output_file)
 		bool result = false;
 		bool loop = false;
 		int* path = (int*)malloc(strlen(cuvant) * sizeof(int));
-		verifyWord(fa, cuvant, strlen(cuvant), 0, fa->S, &result, path);
+		
+		if(!fa->alphabet[26])
+			verifyWord(fa, cuvant, strlen(cuvant), 0, fa->S, &result, path);
+		else
+			verifyLFAWord(fa, cuvant, strlen(cuvant), 0, fa->S, &result);
 		if(result)
 			fprintf(fd, "DA\n");
 		else
 			fprintf(fd, "NU\n");
+
 		free(cuvant);
+		free(path);
 		NrCuv--;
 	}
 }
@@ -338,7 +476,7 @@ static void testFA(FA* fa, FILE* input_fd, char* output_file)
 int main()
 {
 	FA* fa = initFA();
-	FILE* fd = readInput("input.txt");
+	FILE* fd = readInput("./tests/input6.txt");
 	createFA(fd, fa);
 	printFAInfo(fa);
 	testFA(fa, fd, "output.txt");
